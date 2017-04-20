@@ -22,6 +22,7 @@ import org.eclipse.smarthome.core.events.Event
 import org.eclipse.smarthome.core.events.EventPublisher
 import org.eclipse.smarthome.core.events.EventSubscriber
 import org.eclipse.smarthome.core.events.TopicEventFilter
+import org.eclipse.smarthome.core.i18n.LocaleProvider
 import org.eclipse.smarthome.core.items.Item
 import org.eclipse.smarthome.core.items.ItemRegistry
 import org.eclipse.smarthome.core.items.events.ItemCommandEvent
@@ -728,6 +729,9 @@ class ThingManagerOSGiTest extends OSGiTest {
         callback.statusUpdated(THING, statusInfo)
         assertThat THING.statusInfo, is(statusInfo)
 
+        statusInfo = ThingStatusInfoBuilder.create(ThingStatus.UNKNOWN, ThingStatusDetail.NONE).build()
+        expectException({callback.statusUpdated(THING, statusInfo)}, IllegalArgumentException)
+
         statusInfo = ThingStatusInfoBuilder.create(ThingStatus.REMOVING, ThingStatusDetail.NONE).build()
         expectException({callback.statusUpdated(THING, statusInfo)}, IllegalArgumentException)
 
@@ -735,6 +739,10 @@ class ThingManagerOSGiTest extends OSGiTest {
         expectException({callback.statusUpdated(THING, statusInfo)}, IllegalArgumentException)
 
         statusInfo = ThingStatusInfoBuilder.create(ThingStatus.INITIALIZING, ThingStatusDetail.NONE).build()
+        expectException({callback.statusUpdated(THING, statusInfo)}, IllegalArgumentException)
+
+        THING.statusInfo = ThingStatusInfoBuilder.create(ThingStatus.ONLINE, ThingStatusDetail.NONE).build()
+        statusInfo = ThingStatusInfoBuilder.create(ThingStatus.REMOVED, ThingStatusDetail.NONE).build()
         expectException({callback.statusUpdated(THING, statusInfo)}, IllegalArgumentException)
     }
 
@@ -943,10 +951,12 @@ class ThingManagerOSGiTest extends OSGiTest {
         event = ThingEventFactory.createStatusInfoEvent(THING.getUID(), statusInfo)
         unregisterService(thingHandlerFactory)
 
-        waitForAssert {assertThat receivedEvent, not(null)}
-        assertThat receivedEvent.getType(), is(event.getType())
-        assertThat receivedEvent.getPayload(), is(event.getPayload())
-        assertThat receivedEvent.getTopic(), is(event.getTopic())
+        waitForAssert {
+            assertThat receivedEvent, not(null)
+            assertThat receivedEvent.getType(), is(event.getType())
+            assertThat receivedEvent.getPayload(), is(event.getPayload())
+            assertThat receivedEvent.getTopic(), is(event.getTopic())
+        }
     }
 
     @Test
@@ -1007,6 +1017,135 @@ class ThingManagerOSGiTest extends OSGiTest {
         // make sure no event has been sent
         Thread.sleep(100)
         assertThat receivedEvent, is(null)
+    }
+
+    @Test
+    void 'ThingManager posts localized thing status info and thing status info changed events'() {
+        ThingHandlerCallback callback
+        ThingStatusInfoEvent infoEvent
+        ThingStatusInfoChangedEvent infoChangedEvent
+
+        registerThingTypeProvider()
+
+        def thingHandler = [
+            setCallback: {callbackArg -> callback = callbackArg },
+            initialize: {},
+            dispose: {},
+            getThing: {THING}
+        ] as ThingHandler
+
+        def thingHandlerFactory = [
+            supportsThingType: {thingTypeUID -> true},
+            registerHandler: {thing -> thingHandler },
+            unregisterHandler: {thing -> },
+            removeThing: {thingUID ->
+            }
+        ] as ThingHandlerFactory
+        registerService(thingHandlerFactory)
+
+        def thingStatusInfoEventSubscriber = [
+            receive: { event -> infoEvent = event as ThingStatusInfoEvent },
+            getSubscribedEventTypes: { Sets.newHashSet(ThingStatusInfoEvent.TYPE) },
+            getEventFilter: { null },
+        ] as EventSubscriber
+        registerService(thingStatusInfoEventSubscriber)
+
+        def thingStatusInfoChangedEventSubscriber = [
+            receive: { event -> infoChangedEvent = event as ThingStatusInfoChangedEvent },
+            getSubscribedEventTypes: { Sets.newHashSet(ThingStatusInfoChangedEvent.TYPE) },
+            getEventFilter: { null },
+        ] as EventSubscriber
+        registerService(thingStatusInfoChangedEventSubscriber)
+
+        // add thing (UNINITIALIZED -> INITIALIZING)
+        managedThingProvider.add(THING)
+
+        waitForAssert {
+            assertThat infoEvent, not(null)
+            assertThat infoChangedEvent, not(null)
+        }
+
+        assertThat infoEvent.getType(), is(ThingStatusInfoEvent.TYPE)
+        assertThat infoEvent.getTopic(), is("smarthome/things/binding:type:id/status")
+        assertThat infoEvent.getStatusInfo().getStatus(), is(ThingStatus.INITIALIZING)
+        assertThat infoEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoEvent.getStatusInfo().getDescription(), is(null)
+
+        assertThat infoChangedEvent.getType(), is(ThingStatusInfoChangedEvent.TYPE)
+        assertThat infoChangedEvent.getTopic(), is("smarthome/things/binding:type:id/statuschanged")
+        assertThat infoChangedEvent.getStatusInfo().getStatus(), is(ThingStatus.INITIALIZING)
+        assertThat infoChangedEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getStatusInfo().getDescription(), is(null)
+        assertThat infoChangedEvent.getOldStatusInfo().getStatus(), is(ThingStatus.UNINITIALIZED)
+        assertThat infoChangedEvent.getOldStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getOldStatusInfo().getDescription(), is(null)
+
+        infoEvent = null
+        infoChangedEvent = null
+
+        def localeProvider = getService(LocaleProvider)
+        assertThat localeProvider, is(notNullValue())
+        def defaultLocale = localeProvider.getLocale()
+
+        // set status to ONLINE (INITIALIZING -> ONLINE)
+        setDefaultLocale(Locale.ENGLISH)
+
+        ThingStatusInfo statusInfo = ThingStatusInfoBuilder.create(ThingStatus.ONLINE, ThingStatusDetail.NONE).withDescription("@text/online").build()
+        callback.statusUpdated(THING, statusInfo)
+
+        waitForAssert {
+            assertThat infoEvent, not(null)
+            assertThat infoChangedEvent, not(null)
+        }
+
+        assertThat infoEvent.getType(), is(ThingStatusInfoEvent.TYPE)
+        assertThat infoEvent.getTopic(), is("smarthome/things/binding:type:id/status")
+        assertThat infoEvent.getStatusInfo().getStatus(), is(ThingStatus.ONLINE)
+        assertThat infoEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoEvent.getStatusInfo().getDescription(), is("Thing is online.")
+
+        assertThat infoChangedEvent.getType(), is(ThingStatusInfoChangedEvent.TYPE)
+        assertThat infoChangedEvent.getTopic(), is("smarthome/things/binding:type:id/statuschanged")
+        assertThat infoChangedEvent.getStatusInfo().getStatus(), is(ThingStatus.ONLINE)
+        assertThat infoChangedEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getStatusInfo().getDescription(), is("Thing is online.")
+        assertThat infoChangedEvent.getOldStatusInfo().getStatus(), is(ThingStatus.INITIALIZING)
+        assertThat infoChangedEvent.getOldStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getOldStatusInfo().getDescription(), is(null)
+
+        infoEvent = null
+        infoChangedEvent = null
+
+        // set status to OFFLINE (ONLINE -> OFFLINE)
+        setDefaultLocale(Locale.GERMAN)
+
+        statusInfo = ThingStatusInfoBuilder.create(ThingStatus.OFFLINE, ThingStatusDetail.NONE).withDescription("@text/offline.without-param").build()
+        callback.statusUpdated(THING, statusInfo)
+
+        waitForAssert {
+            assertThat infoEvent, not(null)
+            assertThat infoChangedEvent, not(null)
+        }
+
+        assertThat infoEvent.getType(), is(ThingStatusInfoEvent.TYPE)
+        assertThat infoEvent.getTopic(), is("smarthome/things/binding:type:id/status")
+        assertThat infoEvent.getStatusInfo().getStatus(), is(ThingStatus.OFFLINE)
+        assertThat infoEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoEvent.getStatusInfo().getDescription(), is("Thing ist offline.")
+
+        assertThat infoChangedEvent.getType(), is(ThingStatusInfoChangedEvent.TYPE)
+        assertThat infoChangedEvent.getTopic(), is("smarthome/things/binding:type:id/statuschanged")
+        assertThat infoChangedEvent.getStatusInfo().getStatus(), is(ThingStatus.OFFLINE)
+        assertThat infoChangedEvent.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getStatusInfo().getDescription(), is("Thing ist offline.")
+        assertThat infoChangedEvent.getOldStatusInfo().getStatus(), is(ThingStatus.ONLINE)
+        assertThat infoChangedEvent.getOldStatusInfo().getStatusDetail(), is(ThingStatusDetail.NONE)
+        assertThat infoChangedEvent.getOldStatusInfo().getDescription(), is("Thing ist online.")
+
+        infoEvent = null
+        infoChangedEvent = null
+
+        setDefaultLocale(defaultLocale)
     }
 
     @Test
@@ -1124,7 +1263,10 @@ class ThingManagerOSGiTest extends OSGiTest {
             dispose: {},
             childHandlerInitialized: {handler, thing ->},
             childHandlerDisposed: {handler, thing ->},
-            getThing: {-> return bridge}
+            getThing: {-> return bridge},
+            handleRemoval: {
+                bridgeCallback.statusUpdated(bridge, ThingStatusInfoBuilder.create(ThingStatus.REMOVED, ThingStatusDetail.NONE).build())
+            }
         ] as BridgeHandler
 
         def bridgeStatusChangedCalled = false
@@ -1174,9 +1316,12 @@ class ThingManagerOSGiTest extends OSGiTest {
         waitForAssert({assertThat bridgeStatusChangedCalled, is(true)})
         bridgeStatusChangedCalled = false;
 
-        statusInfo = ThingStatusInfoBuilder.create(ThingStatus.REMOVED, ThingStatusDetail.NONE).build()
-        bridgeCallback.statusUpdated(bridge, statusInfo)
-        waitForAssert({assertThat bridgeStatusChangedCalled, is(false)})
+        def thingRegistry = getService(ThingRegistry)
+        thingRegistry.remove(bridge.getUID())
+        waitForAssert({
+            assertThat bridge.getStatus(), is(equalTo(ThingStatus.UNINITIALIZED))
+            assertThat bridgeStatusChangedCalled, is(false)
+        })
     }
 
     @Test

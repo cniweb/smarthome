@@ -838,17 +838,10 @@
 					y: event.touches[0].pageY - _t.colorpicker.offsetTop
 				};
 			} else {
-				if (featureSupport.eventLayerXY && featureSupport.pointerEvents) {
-					pos = {
-						x: event.layerX,
-						y: event.layerY
-					};
-				} else {
-					pos = {
-						x: event.pageX - _t.colorpicker.offsetLeft,
-						y: event.pageY - _t.colorpicker.offsetTop
-					};
-				}
+				pos = {
+					x: event.pageX - _t.colorpicker.offsetLeft,
+					y: event.pageY - _t.colorpicker.offsetTop
+				};
 			}
 			var
 				maxR = _t.image.clientWidth / 2,
@@ -1645,9 +1638,13 @@
 					widget.setValue(value, data.item.state);
 					if (data.labelcolor !== undefined) {
 						widget.setLabelColor(data.labelcolor);
+					} else {
+						widget.setLabelColor("");
 					}
 					if (data.valuecolor !== undefined) {
 						widget.setValueColor(data.valuecolor);
+					} else {
+						widget.setValueColor("");
 					}
 				}
 			}
@@ -1693,9 +1690,13 @@
 							}
 							if (labelcolor !== undefined) {
 								w.setLabelColor(labelcolor);
+							} else {
+								w.setLabelColor("");
 							}
 							if (valuecolor !== undefined) {
 								w.setValueColor(valuecolor);
+							} else {
+								w.setValueColor("");
 							}
 						});
 					}

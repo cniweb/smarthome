@@ -306,6 +306,7 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
     }
     $scope.refresh();
 }).controller('ViewThingController', function($scope, $mdDialog, toastService, thingTypeService, thingRepository, thingService, linkService, channelTypeService, configService, thingConfigService, util, itemRepository) {
+    $scope.setSubtitle([ 'Things' ]);
 
     var thingUID = $scope.path[4];
     $scope.thingTypeUID = null;
@@ -316,6 +317,7 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
     $scope.showAdvanced = false;
     $scope.channelTypes;
     $scope.items;
+    
     channelTypeService.getAll().$promise.then(function(channels) {
         $scope.channelTypes = channels;
         $scope.refreshChannels(false);
@@ -323,6 +325,7 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
     itemRepository.getAll(function(items) {
         $scope.items = items;
     });
+    
     $scope.remove = function(thing, event) {
         event.stopImmediatePropagation();
         $mdDialog.show({
@@ -522,11 +525,7 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
             $scope.thing = thing;
             $scope.thingTypeUID = thing.thingTypeUID;
             getThingType();
-            if (thing.item) {
-                $scope.setTitle(thing.label);
-            } else {
-                $scope.setTitle(thing.UID);
-            }
+            $scope.setSubtitle(['Things', thing.label]);
         }, refresh);
     }
     $scope.getThing(true);
@@ -695,7 +694,8 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
     $scope.unlink = function() {
         $mdDialog.hide();
     }
-}).controller('EditThingController', function($scope, $mdDialog, toastService, thingTypeService, thingRepository, configService, thingService) {
+}).controller('EditThingController', function($scope, $mdDialog, toastService, thingTypeService, thingRepository, configService, configDescriptionService, thingService) {
+    $scope.setSubtitle([ 'Things' ]);
     $scope.setHeaderText('Click the \'Save\' button to apply the changes.');
 
     var thingUID = $scope.path[4];
@@ -747,8 +747,6 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
             thingTypeUID : $scope.thingTypeUID
         }, function(thingType) {
             $scope.thingType = thingType;
-            $scope.parameters = configService.getRenderingModel(thingType.configParameters, thingType.parameterGroups);
-            $scope.configuration = configService.setConfigDefaults($scope.thing.configuration, $scope.parameters)
             $scope.needsBridge = $scope.thingType.supportedBridgeTypeUIDs && $scope.thingType.supportedBridgeTypeUIDs.length > 0;
             if ($scope.needsBridge) {
                 $scope.getBridges();
@@ -756,18 +754,28 @@ angular.module('PaperUI.controllers.configuration', [ 'PaperUI.constants' ]).con
         });
     };
     $scope.getThing = function(refresh) {
+        // Get the thing
         thingRepository.getOne(function(thing) {
             return thing.UID === thingUID;
         }, function(thing) {
             $scope.thing = thing;
             angular.copy(thing, originalThing);
             $scope.thingTypeUID = thing.thingTypeUID;
+            
+            // Get the thing type
             $scope.getThingType();
-            if (thing.item) {
-                $scope.setTitle('Edit ' + thing.label);
-            } else {
-                $scope.setTitle('Edit ' + thing.UID);
-            }
+            $scope.setSubtitle([ 'Things', 'Edit', thing.label]);
+
+            // Now get the configuration information for this thing
+            configDescriptionService.getByUri({
+                uri : "thing:" + thing.UID
+            }, function(configDescription) {
+                if (configDescription) {
+                    $scope.parameters = configService.getRenderingModel(configDescription.parameters, configDescription.parameterGroups);
+                    $scope.configuration = configService.setConfigDefaults($scope.thing.configuration, $scope.parameters)
+                }
+            });
+
         }, refresh);
     }
     $scope.$watch('configuration', function() {

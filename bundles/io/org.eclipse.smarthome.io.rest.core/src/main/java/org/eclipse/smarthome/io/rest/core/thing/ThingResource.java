@@ -59,12 +59,14 @@ import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.ManagedThingProvider;
 import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingRegistry;
+import org.eclipse.smarthome.core.thing.ThingStatusInfo;
 import org.eclipse.smarthome.core.thing.ThingTypeUID;
 import org.eclipse.smarthome.core.thing.ThingUID;
 import org.eclipse.smarthome.core.thing.dto.ChannelDTO;
 import org.eclipse.smarthome.core.thing.dto.ChannelDTOMapper;
 import org.eclipse.smarthome.core.thing.dto.ThingDTO;
 import org.eclipse.smarthome.core.thing.dto.ThingDTOMapper;
+import org.eclipse.smarthome.core.thing.i18n.ThingStatusInfoI18nLocalizationService;
 import org.eclipse.smarthome.core.thing.link.ItemChannelLink;
 import org.eclipse.smarthome.core.thing.link.ItemChannelLinkRegistry;
 import org.eclipse.smarthome.core.thing.link.ManagedItemChannelLinkProvider;
@@ -91,7 +93,7 @@ import io.swagger.annotations.ApiResponses;
  * @author Dennis Nobel - Initial contribution
  * @author Kai Kreuzer - refactored for using the OSGi JAX-RS connector and
  *         refactored create and update methods
- * @author Thomas Höfer - added validation of configuration
+ * @author Thomas Höfer - added validation of configuration and localization of thing status
  * @author Yordan Zhelev - Added Swagger annotations
  * @author Jörg Plewe - refactoring, error handling
  * @author Chris Jackson - added channel configuration updates
@@ -116,6 +118,7 @@ public class ThingResource implements SatisfiableRESTResource {
     private ConfigStatusService configStatusService;
     private ConfigDescriptionRegistry configDescRegistry;
     private ThingTypeRegistry thingTypeRegistry;
+    private ThingStatusInfoI18nLocalizationService thingStatusInfoI18nLocalizationService;
 
     @Context
     private UriInfo uriInfo;
@@ -130,7 +133,7 @@ public class ThingResource implements SatisfiableRESTResource {
     @RolesAllowed({ Role.ADMIN })
     @Consumes(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "Creates a new thing and adds it to the registry.")
-    @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
+    @ApiResponses(value = { @ApiResponse(code = 201, message = "Created"),
             @ApiResponse(code = 400, message = "A uid must be provided, if no binding can create a thing of this type."),
             @ApiResponse(code = 409, message = "A thing with the same uid already exists.") })
     public Response create(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) @ApiParam(value = "language") String language,
@@ -213,7 +216,7 @@ public class ThingResource implements SatisfiableRESTResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "Gets thing by UID.")
     @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
-            @ApiResponse(code = 404, message = "Thing with provided thingUID does not exist.") })
+            @ApiResponse(code = 404, message = "Thing not found.") })
     public Response getByUID(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) @ApiParam(value = "language") String language,
             @PathParam("thingUID") @ApiParam(value = "thingUID") String thingUID) {
         final Locale locale = LocaleUtil.getLocale(language);
@@ -242,7 +245,8 @@ public class ThingResource implements SatisfiableRESTResource {
     @Consumes(MediaType.TEXT_PLAIN)
     @ApiOperation(value = "Links item to a channel. Creates item if such does not exist yet.")
     @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
-            @ApiResponse(code = 404, message = "Thing not found or channel not found") })
+            @ApiResponse(code = 403, message = "Channel is not linkable for the thing, as it is not of kind 'state'!"),
+            @ApiResponse(code = 404, message = "Thing not found or channel not found.") })
     public Response link(@PathParam("thingUID") @ApiParam(value = "thingUID") String thingUID,
             @PathParam("channelId") @ApiParam(value = "channelId") String channelId,
             @ApiParam(value = "item name") String itemName) {
@@ -296,10 +300,11 @@ public class ThingResource implements SatisfiableRESTResource {
     @RolesAllowed({ Role.ADMIN })
     @Path("/{thingUID}")
     @ApiOperation(value = "Removes a thing from the registry. Set \'force\' to __true__ if you want the thing te be removed immediately.")
-    @ApiResponses(value = { @ApiResponse(code = 202, message = "ACCEPTED for asynchronous deletion."),
-            @ApiResponse(code = 200, message = "OK, was deleted."),
+    @ApiResponses(value = { @ApiResponse(code = 200, message = "OK, was deleted."),
+            @ApiResponse(code = 202, message = "ACCEPTED for asynchronous deletion."),
+            @ApiResponse(code = 404, message = "Thing not found."),
             @ApiResponse(code = 409, message = "CONFLICT, Thing could not be deleted because it's not managed."),
-            @ApiResponse(code = 404, message = "Thing not found.") })
+            @ApiResponse(code = 500, message = "Thing could not be deleted for unknown reasons.") })
     public Response remove(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) @ApiParam(value = "language") String language,
             @PathParam("thingUID") @ApiParam(value = "thingUID") String thingUID,
             @DefaultValue("false") @QueryParam("force") @ApiParam(value = "force") boolean force) {
@@ -352,7 +357,8 @@ public class ThingResource implements SatisfiableRESTResource {
     @RolesAllowed({ Role.ADMIN })
     @Path("/{thingUID}/channels/{channelId}/link")
     @ApiOperation(value = "Unlinks item from a channel.")
-    @ApiResponses(value = { @ApiResponse(code = 200, message = "OK") })
+    @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 404, message = "Thing not found.") })
     public Response unlink(@PathParam("thingUID") @ApiParam(value = "thingUID") String thingUID,
             @PathParam("channelId") @ApiParam(value = "channelId") String channelId,
             @ApiParam(value = "channelId") String itemName) {
@@ -386,7 +392,8 @@ public class ThingResource implements SatisfiableRESTResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "Updates a thing.")
     @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
-            @ApiResponse(code = 404, message = "Thing not found") })
+            @ApiResponse(code = 404, message = "Thing not found."),
+            @ApiResponse(code = 409, message = "Thing could not be updated. Maybe it is not managed.") })
     public Response update(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) @ApiParam(value = "language") String language,
             @PathParam("thingUID") @ApiParam(value = "thingUID") String thingUID,
             @ApiParam(value = "thing", required = true) ThingDTO thingBean) throws IOException {
@@ -442,11 +449,13 @@ public class ThingResource implements SatisfiableRESTResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "Updates thing's configuration.")
     @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
-            @ApiResponse(code = 404, message = "Thing not found") })
+            @ApiResponse(code = 400, message = "Configuration of the thing is not valid."),
+            @ApiResponse(code = 404, message = "Thing not found"),
+            @ApiResponse(code = 409, message = "Thing could not be updated. Maybe it is not managed.") })
     public Response updateConfiguration(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String language,
             @PathParam("thingUID") @ApiParam(value = "thing") String thingUID,
             @ApiParam(value = "configuration parameters") Map<String, Object> configurationParameters)
-            throws IOException {
+                    throws IOException {
         final Locale locale = LocaleUtil.getLocale(language);
 
         ThingUID thingUIDObject = new ThingUID(thingUID);
@@ -478,7 +487,7 @@ public class ThingResource implements SatisfiableRESTResource {
                             normalizeConfiguration(configurationParameters, thing.getThingTypeUID(), thing.getUID()))
                                     .getProperties());
         } catch (ConfigValidationException ex) {
-            logger.debug("Config description validation exception occured for thingUID {} - Messages: {}", thingUID,
+            logger.debug("Config description validation exception occurred for thingUID {} - Messages: {}", thingUID,
                     ex.getValidationMessages());
             return Response.status(Status.BAD_REQUEST).entity(ex.getValidationMessages(locale)).build();
         } catch (IllegalArgumentException ex) {
@@ -488,6 +497,29 @@ public class ThingResource implements SatisfiableRESTResource {
         }
 
         return getThingResponse(Status.OK, thing, locale, null);
+    }
+
+    @GET
+    @RolesAllowed({ Role.USER, Role.ADMIN })
+    @Path("/{thingUID}/status")
+    @ApiOperation(value = "Gets thing's status.")
+    @ApiResponses(value = { @ApiResponse(code = 200, message = "OK"),
+            @ApiResponse(code = 404, message = "Thing not found.") })
+    public Response getStatus(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String language,
+            @PathParam("thingUID") @ApiParam(value = "thing") String thingUID) throws IOException {
+        ThingUID thingUIDObject = new ThingUID(thingUID);
+
+        // Check if the Thing exists, 404 if not
+        Thing thing = thingRegistry.get(thingUIDObject);
+        if (null == thing) {
+            logger.info("Received HTTP GET request for thing config status at '{}' for the unknown thing '{}'.",
+                    uriInfo.getPath(), thingUID);
+            return getThingNotFoundResponse(thingUID);
+        }
+
+        ThingStatusInfo thingStatusInfo = thingStatusInfoI18nLocalizationService.getLocalizedThingStatusInfo(thing,
+                LocaleUtil.getLocale(language));
+        return Response.ok().entity(thingStatusInfo).build();
     }
 
     @GET
@@ -535,8 +567,10 @@ public class ThingResource implements SatisfiableRESTResource {
      * @return Response
      */
     private Response getThingResponse(Status status, Thing thing, Locale locale, String errormessage) {
-        Object entity = null != thing
-                ? EnrichedThingDTOMapper.map(thing, uriInfo.getBaseUri(), locale, getLinkedItemsMap(thing)) : null;
+        ThingStatusInfo thingStatusInfo = thingStatusInfoI18nLocalizationService.getLocalizedThingStatusInfo(thing,
+                locale);
+        Object entity = null != thing ? EnrichedThingDTOMapper.map(thing, thingStatusInfo, getLinkedItemsMap(thing))
+                : null;
         return JSONResponse.createResponse(status, entity, errormessage);
     }
 
@@ -604,11 +638,22 @@ public class ThingResource implements SatisfiableRESTResource {
         this.configStatusService = null;
     }
 
+    protected void setThingStatusInfoI18nLocalizationService(
+            ThingStatusInfoI18nLocalizationService thingStatusInfoI18nLocalizationService) {
+        this.thingStatusInfoI18nLocalizationService = thingStatusInfoI18nLocalizationService;
+    }
+
+    protected void unsetThingStatusInfoI18nLocalizationService(
+            ThingStatusInfoI18nLocalizationService thingStatusInfoI18nLocalizationService) {
+        this.thingStatusInfoI18nLocalizationService = null;
+    }
+
     private Set<EnrichedThingDTO> convertToListBean(Collection<Thing> things, Locale locale) {
         Set<EnrichedThingDTO> thingBeans = new LinkedHashSet<>();
         for (Thing thing : things) {
-            EnrichedThingDTO thingBean = EnrichedThingDTOMapper.map(thing, uriInfo.getBaseUri(), locale,
-                    getLinkedItemsMap(thing));
+            ThingStatusInfo thingStatusInfo = thingStatusInfoI18nLocalizationService.getLocalizedThingStatusInfo(thing,
+                    locale);
+            EnrichedThingDTO thingBean = EnrichedThingDTOMapper.map(thing, thingStatusInfo, getLinkedItemsMap(thing));
             thingBeans.add(thingBean);
         }
         return thingBeans;
@@ -707,7 +752,7 @@ public class ThingResource implements SatisfiableRESTResource {
         return itemChannelLinkRegistry != null && itemFactory != null && itemRegistry != null
                 && managedItemChannelLinkProvider != null && managedItemProvider != null && managedThingProvider != null
                 && thingRegistry != null && configStatusService != null && configDescRegistry != null
-                && thingTypeRegistry != null;
+                && thingTypeRegistry != null && thingStatusInfoI18nLocalizationService != null;
 
     }
 

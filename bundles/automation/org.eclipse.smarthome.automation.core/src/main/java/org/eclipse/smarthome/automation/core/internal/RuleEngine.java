@@ -14,11 +14,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -133,6 +133,7 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
      * {@link Map} system module type to corresponding module handler factories.
      */
     private Map<String, ModuleHandlerFactory> moduleHandlerFactories;
+    private Set<ModuleHandlerFactory> allModuleHandlerFactories = new CopyOnWriteArraySet<>();
 
     /**
      * Locker which does not permit rule initialization when the rule engine is stopping.
@@ -193,13 +194,7 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
     @Override
     public void added(ModuleType moduleType) {
         String moduleTypeName = moduleType.getUID();
-        Collection<ModuleHandlerFactory> moduleHandlerFactories = new LinkedList<ModuleHandlerFactory>();
-        synchronized (this) {
-            if (this.moduleHandlerFactories.get(moduleTypeName) == null) {
-                moduleHandlerFactories.addAll(this.moduleHandlerFactories.values());
-            }
-        }
-        for (ModuleHandlerFactory moduleHandlerFactory : moduleHandlerFactories) {
+        for (ModuleHandlerFactory moduleHandlerFactory : allModuleHandlerFactories) {
             Collection<String> moduleTypes = moduleHandlerFactory.getTypes();
             if (moduleTypes.contains(moduleTypeName)) {
                 synchronized (this) {
@@ -233,7 +228,7 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
 
     @Override
     public void updated(ModuleType oldElement, ModuleType moduleType) {
-        if (oldElement.equals(moduleType)) {
+        if (moduleType.equals(oldElement)) {
             return;
         }
         String moduleTypeName = moduleType.getUID();
@@ -260,6 +255,7 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
 
     protected void addModuleHandlerFactory(ModuleHandlerFactory moduleHandlerFactory) {
         logger.debug("ModuleHandlerFactory added.");
+        allModuleHandlerFactories.add(moduleHandlerFactory);
         Collection<String> moduleTypes = moduleHandlerFactory.getTypes();
         addNewModuleTypes(moduleHandlerFactory, moduleTypes);
     }
@@ -269,6 +265,7 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
             compositeFactory.deactivate();
             compositeFactory = null;
         }
+        allModuleHandlerFactories.remove(moduleHandlerFactory);
         Collection<String> moduleTypes = moduleHandlerFactory.getTypes();
         removeMissingModuleTypes(moduleTypes);
         updateModuleHandlerFactoryMap(moduleTypes);
@@ -844,10 +841,10 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
         }
     }
 
-    protected void runNow(String ruleUID) {
+    protected void runNow(String ruleUID, boolean considerConditions, Map<String, Object> context) {
         RuntimeRule rule = getRuntimeRule(ruleUID);
         if (rule == null) {
-            logger.warn("Fail to execute rule '{}': {}", ruleUID, "Invalid Rule UID.");
+            logger.warn("Failed to execute rule '{}': Invalid Rule UID", ruleUID);
             return;
         }
 
@@ -863,7 +860,16 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
 
         try {
             clearContext(rule);
-            executeActions(rule, false);
+            if (context!=null && !context.isEmpty()){
+                getContext(ruleUID).putAll(context);
+            }
+            if (considerConditions) {
+                if (calculateConditions(rule)) {
+                    executeActions(rule, false);
+                }
+            } else {
+                executeActions(rule, false);
+            }
             logger.debug("The rule '{}' is executed.", ruleUID);
         } catch (Throwable t) {
             logger.error("Fail to execute rule '{}': {}", new Object[] { ruleUID, t.getMessage() }, t);
@@ -874,6 +880,10 @@ public class RuleEngine implements RegistryChangeListener<ModuleType> {
                 setRuleStatusInfo(ruleUID, new RuleStatusInfo(RuleStatus.IDLE), true);
             }
         }
+    }
+
+    protected void runNow(String ruleUID) {
+        runNow(ruleUID, false, null);
     }
 
     protected void clearContext(RuntimeRule rule) {

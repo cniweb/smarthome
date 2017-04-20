@@ -138,7 +138,7 @@ public abstract class AbstractFileProvider<E> implements Provider<E> {
             File[] files = file.listFiles();
             if (files != null) {
                 for (File f : files) {
-                    if (!file.isHidden()) {
+                    if (!f.isHidden()) {
                         importResources(f);
                     }
                 }
@@ -259,9 +259,9 @@ public abstract class AbstractFileProvider<E> implements Provider<E> {
             List<String> uids = new ArrayList<String>();
             for (E providedObject : providedObjects) {
                 String uid = getUID(providedObject);
-                notifyListeners(providedObjectsHolder.get(uid), providedObject);
                 uids.add(uid);
-                providedObjectsHolder.put(uid, providedObject);
+                E oldProvidedObject = providedObjectsHolder.put(uid, providedObject);
+                notifyListeners(oldProvidedObject, providedObject);
             }
             providerPortfolio.put(url, uids);
         }

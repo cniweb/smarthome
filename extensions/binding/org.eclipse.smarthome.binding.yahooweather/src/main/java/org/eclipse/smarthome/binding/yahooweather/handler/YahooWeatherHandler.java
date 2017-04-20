@@ -14,6 +14,8 @@ import java.math.BigDecimal;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.ScheduledFuture;
@@ -169,7 +171,7 @@ public class YahooWeatherHandler extends ConfigStatusThingHandler {
                         logger.trace(
                                 "The Yahoo Weather API did not return any data. Omiting the old result because it became too old.");
                         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR,
-                                "The Yahoo Weather API did not return any data.");
+                                "@text/offline.no-data");
                         return false;
                     } else {
                         // simply keep the old data
@@ -185,7 +187,8 @@ public class YahooWeatherHandler extends ConfigStatusThingHandler {
             }
         } catch (IOException e) {
             logger.warn("Error accessing Yahoo weather: {}", e.getMessage());
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, e.getMessage());
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR,
+                    "@text/offline.location [\"" + location.toPlainString() + "\"");
         }
         weatherData = null;
         return false;
@@ -201,7 +204,7 @@ public class YahooWeatherHandler extends ConfigStatusThingHandler {
                 public String load(String query) throws IOException {
                     try {
                         URL url = new URL("https://query.yahooapis.com/v1/public/yql?format=json&q="
-                                + query.replaceAll(" ", "%20").replaceAll("'", "%27"));
+                                + URLEncoder.encode(query, StandardCharsets.UTF_8.toString()));
                         URLConnection connection = url.openConnection();
                         return IOUtils.toString(connection.getInputStream());
                     } catch (MalformedURLException e) {
