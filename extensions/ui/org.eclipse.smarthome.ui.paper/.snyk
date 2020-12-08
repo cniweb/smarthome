@@ -1,0 +1,19 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.19.0
+ignore: {}
+# patches apply the minimum changes required to fix a vulnerability
+patch:
+  'npm:debug:20170905':
+    - browser-sync > socket.io > socket.io-adapter > socket.io-parser > debug:
+        patched: '2020-12-08T21:23:25.532Z'
+  'npm:lodash:20180130':
+    - browser-sync > eazy-logger > opt-merger > lodash:
+        patched: '2020-12-08T21:23:25.532Z'
+    - browser-sync > foxy > eazy-logger > opt-merger > lodash:
+        patched: '2020-12-08T21:23:25.532Z'
+  'npm:minimatch:20160620':
+    - browser-sync > foxy > resp-modifier > minimatch:
+        patched: '2020-12-08T21:23:25.532Z'
+  'npm:ms:20170412':
+    - browser-sync > socket.io > socket.io-adapter > socket.io-parser > debug > ms:
+        patched: '2020-12-08T21:23:25.532Z'
