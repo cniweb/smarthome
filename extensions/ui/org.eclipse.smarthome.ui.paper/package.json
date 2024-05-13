@@ -16,7 +16,7 @@
     "browser-sync": "~2.26.13",
     "del": "^2.0.0",
     "eventsource-polyfill": "^0.9.6",
-    "gulp": "^4.0.0",
+    "gulp": "^5.0.0",
     "gulp-angular-filesort": "~1.2.0",
     "gulp-concat": "^2.6.0",
     "gulp-inject": "^4.0.0",
